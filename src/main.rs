@@ -6,8 +6,8 @@ use svg::node::element::{Group, Path, Polygon, Text as SvgText};
 use svg::node::Text as TextNode;
 use svg::Document;
 
-const VIEW_WIDTH: f64 = 1000.0;
-const VIEW_HEIGHT: f64 = 700.0;
+const VIEW_WIDTH: f64 = 1200.0; // Widened for "extended" look
+const VIEW_HEIGHT: f64 = 800.0;
 
 // --- GITHUB API STRUCTS ---
 #[derive(Deserialize, Debug)]
@@ -62,8 +62,9 @@ struct LangNode { name: String, color: Option<String> }
 
 fn project(x: f64, y: f64, z: f64) -> (f64, f64) {
     let angle = 30.0_f64.to_radians();
-    let sx = 450.0 + (x - y) * angle.cos() * 12.0;
-    let sy = 330.0 + (x + y) * angle.sin() * 12.0 - z;
+    // Adjusted offsets to start closer to top-left and extend further
+    let sx = 300.0 + (x - y) * angle.cos() * 15.0; 
+    let sy = 250.0 + (x + y) * angle.sin() * 15.0 - z;
     (sx, sy)
 }
 
@@ -75,16 +76,13 @@ fn darken(hex: &str, amount: f64) -> String {
     format!("#{:02x}{:02x}{:02x}", r, g, b)
 }
 
-// Logic to pick a "Seasonal" color based on week index to match the reference image
 fn get_seasonal_color(week_idx: usize, count: i32) -> String {
     if count == 0 { return "#ebedf0".to_string(); }
-    
-    // Transitions: Greenish -> Yellow -> Grey -> Purple
     match week_idx {
-        0..=12  => "#c6e48b".to_string(), // Q1: Greenish
-        13..=25 => "#f4e04d".to_string(), // Q2: Yellow
-        26..=38 => "#a3a3a3".to_string(), // Q3: Grey
-        _       => "#d1a3d1".to_string(), // Q4: Purple
+        0..=12  => "#c6e48b".to_string(), // Greenish
+        13..=25 => "#f4e04d".to_string(), // Yellow
+        26..=38 => "#a3a3a3".to_string(), // Grey
+        _       => "#d1a3d1".to_string(), // Purple
     }
 }
 
@@ -115,9 +113,9 @@ fn draw_3d_heatmap(weeks: &[Week]) -> Group {
 }
 
 fn draw_donut_chart(lang_stats: HashMap<String, (i32, String)>) -> Group {
-    let mut g = Group::new().set("transform", "translate(150, 550)");
+    let mut g = Group::new().set("transform", "translate(150, 650)");
     let mut sorted_langs: Vec<_> = lang_stats.into_iter().collect();
-    sorted_langs.sort_by(|a, b| b.1.0.cmp(&a.1.0)); // Sort by size
+    sorted_langs.sort_by(|a, b| b.1.0.cmp(&a.1.0));
     
     let total: i32 = sorted_langs.iter().map(|v| v.1.0).sum();
     let mut current_angle: f64 = 0.0;
@@ -137,14 +135,18 @@ fn draw_donut_chart(lang_stats: HashMap<String, (i32, String)>) -> Group {
 
         let large_arc = if slice_angle > PI { 1 } else { 0 };
         let d = format!("M {} {} A {} {} 0 {} 1 {} {} L {} {} A {} {} 0 {} 0 {} {} Z", x1, y1, radius, radius, large_arc, x2, y2, x3, y3, inner_radius, inner_radius, large_arc, x4, y4);
-        
         g = g.add(Path::new().set("d", d).set("fill", color.as_str()));
         
-        // Legend on the right of the donut
-        if i < 7 { // Show top 7 to avoid clutter
-            g = g.add(Polygon::new().set("points", "0,0 12,0 12,12 0,12").set("fill", color.as_str()).set("transform", format!("translate(110, {})", i as i32 * 22 - 70)));
-            g = g.add(SvgText::new().set("x", 128).set("y", i as i32 * 22 - 60).set("fill", "#586069").set("font-size", 13).add(TextNode::new(name)));
-        }
+        // --- MULTI-COLUMN LEGEND LOGIC ---
+        // Every 10 languages, we start a new column
+        let col = i / 10;
+        let row = i % 10;
+        let x_offset = 110 + (col * 130);
+        let y_offset = (row as i32 * 22) - 100;
+
+        g = g.add(Polygon::new().set("points", "0,0 12,0 12,12 0,12").set("fill", color.as_str()).set("transform", format!("translate({}, {})", x_offset, y_offset)));
+        g = g.add(SvgText::new().set("x", x_offset + 18).set("y", y_offset + 10).set("fill", "#586069").set("font-size", 13).add(TextNode::new(name)));
+        
         current_angle += slice_angle;
     }
     g
@@ -152,7 +154,7 @@ fn draw_donut_chart(lang_stats: HashMap<String, (i32, String)>) -> Group {
 
 fn draw_radar_chart(stats: &[i32; 5]) -> Group {
     let labels = ["Commit", "Issue", "PullReq", "Review", "Repo"];
-    let mut g = Group::new().set("transform", "translate(750, 230)");
+    let mut g = Group::new().set("transform", "translate(950, 250)"); // Pushed right
     let max_r = 100.0;
     
     for r in [0.25, 0.5, 0.75, 1.0] {
@@ -170,7 +172,6 @@ fn draw_radar_chart(stats: &[i32; 5]) -> Group {
         let a = (i as f64 * 72.0 - 90.0).to_radians();
         let r = val_scaled.min(1.0) * max_r;
         data_points.push_str(&format!("{},{} ", a.cos() * r, a.sin() * r));
-        
         g = g.add(SvgText::new().set("x", a.cos() * 125.0 - 20.0).set("y", a.sin() * 125.0).set("fill", "#586069").set("font-size", 14).add(TextNode::new(labels[i])));
     }
     g.add(Polygon::new().set("points", data_points).set("fill", "rgba(46, 160, 67, 0.2)").set("stroke", "#2ea043").set("stroke-width", 2))
@@ -182,7 +183,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let username = env::var("GITHUB_USER").expect("GITHUB_USER required");
 
     let client = reqwest::blocking::Client::new();
-    let query = r#"query($login:String!){user(login:$login){contributionsCollection{totalCommitContributions totalIssueContributions totalPullRequestContributions totalPullRequestReviewContributions totalRepositoryContributions contributionCalendar{totalContributions weeks{contributionDays{contributionCount}}}} repositories(first:100,ownerAffiliations:OWNER){nodes{stargazerCount forkCount languages(first:5,orderBy:{field:SIZE,direction:DESC}){edges{size node{name color}}}}}}}"#;
+    let query = r#"query($login:String!){user(login:$login){contributionsCollection{totalCommitContributions totalIssueContributions totalPullRequestContributions totalPullRequestReviewContributions totalRepositoryContributions contributionCalendar{totalContributions weeks{contributionDays{contributionCount}}}} repositories(first:100,ownerAffiliations:OWNER){nodes{stargazerCount forkCount languages(first:10,orderBy:{field:SIZE,direction:DESC}){edges{size node{name color}}}}}}}"#;
 
     let res: GithubResponse = client.post("https://api.github.com/graphql").bearer_auth(token).header("User-Agent", "rust").json(&serde_json::json!({"query":query,"variables":{"login":username}})).send()?.json()?;
     let user = res.data.user;
@@ -201,7 +202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut doc = Document::new().set("viewBox", (0, 0, VIEW_WIDTH, VIEW_HEIGHT)).set("style", "background:#ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;");
+    let mut doc = Document::new().set("viewBox", (0, 0, VIEW_WIDTH, VIEW_HEIGHT)).set("style", "background:#ffffff; font-family: -apple-system, sans-serif;");
     
     doc = doc.add(draw_3d_heatmap(&user.contributions_collection.contribution_calendar.weeks));
     doc = doc.add(draw_donut_chart(langs));
@@ -209,9 +210,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Footer
     let footer_text = format!("{} contributions    ⭐ {}     {}", user.contributions_collection.contribution_calendar.total_contributions, total_stars, total_forks);
-    doc = doc.add(SvgText::new().set("x", 500).set("y", 670).set("fill", "#586069").set("text-anchor", "middle").set("font-size", 22).set("font-weight", "bold").add(TextNode::new(footer_text)));
+    doc = doc.add(SvgText::new().set("x", VIEW_WIDTH / 2.0).set("y", VIEW_HEIGHT - 30.0).set("fill", "#586069").set("text-anchor", "middle").set("font-size", 22).set("font-weight", "bold").add(TextNode::new(footer_text)));
 
-    svg::save("github_profile_3d_white.svg", &doc)?;
-    println!("Generated: github_profile_3d_white.svg");
+    svg::save("github_extended_profile.svg", &doc)?;
+    println!("Generated: github_extended_profile.svg");
     Ok(())
 }
