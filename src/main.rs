@@ -6,8 +6,9 @@ use svg::node::element::{Group, Path, Polygon, Text as SvgText};
 use svg::node::Text as TextNode;
 use svg::Document;
 
-const VIEW_WIDTH: f64 = 1200.0; // Widened for "extended" look
-const VIEW_HEIGHT: f64 = 800.0;
+// Larger canvas to prevent crowding
+const VIEW_WIDTH: f64 = 1400.0;
+const VIEW_HEIGHT: f64 = 1000.0;
 
 // --- GITHUB API STRUCTS ---
 #[derive(Deserialize, Debug)]
@@ -62,9 +63,10 @@ struct LangNode { name: String, color: Option<String> }
 
 fn project(x: f64, y: f64, z: f64) -> (f64, f64) {
     let angle = 30.0_f64.to_radians();
-    // Adjusted offsets to start closer to top-left and extend further
-    let sx = 300.0 + (x - y) * angle.cos() * 15.0; 
-    let sy = 250.0 + (x + y) * angle.sin() * 15.0 - z;
+    // Increase multiplier to 20.0 for a much longer/wider "extended" look
+    let scale = 20.0; 
+    let sx = 400.0 + (x - y) * angle.cos() * scale;
+    let sy = 300.0 + (x + y) * angle.sin() * scale - z;
     (sx, sy)
 }
 
@@ -79,10 +81,10 @@ fn darken(hex: &str, amount: f64) -> String {
 fn get_seasonal_color(week_idx: usize, count: i32) -> String {
     if count == 0 { return "#ebedf0".to_string(); }
     match week_idx {
-        0..=12  => "#c6e48b".to_string(), // Greenish
-        13..=25 => "#f4e04d".to_string(), // Yellow
-        26..=38 => "#a3a3a3".to_string(), // Grey
-        _       => "#d1a3d1".to_string(), // Purple
+        0..=12  => "#c6e48b".to_string(), // Q1
+        13..=25 => "#f4e04d".to_string(), // Q2
+        26..=38 => "#a3a3a3".to_string(), // Q3
+        _       => "#d1a3d1".to_string(), // Q4
     }
 }
 
@@ -92,7 +94,7 @@ fn draw_3d_heatmap(weeks: &[Week]) -> Group {
     let mut g = Group::new();
     for (x, week) in weeks.iter().enumerate() {
         for (y, day) in week.contribution_days.iter().enumerate() {
-            let h = (day.contribution_count as f64 * 4.0).max(2.0);
+            let h = (day.contribution_count as f64 * 5.0).max(2.0); // Taller bars
             let (xf, yf) = (x as f64, y as f64);
             let color = get_seasonal_color(x, day.contribution_count);
 
@@ -113,14 +115,15 @@ fn draw_3d_heatmap(weeks: &[Week]) -> Group {
 }
 
 fn draw_donut_chart(lang_stats: HashMap<String, (i32, String)>) -> Group {
-    let mut g = Group::new().set("transform", "translate(150, 650)");
+    // Moved lower to (180, 820) to avoid heatmap overlap
+    let mut g = Group::new().set("transform", "translate(180, 820)");
     let mut sorted_langs: Vec<_> = lang_stats.into_iter().collect();
     sorted_langs.sort_by(|a, b| b.1.0.cmp(&a.1.0));
     
     let total: i32 = sorted_langs.iter().map(|v| v.1.0).sum();
     let mut current_angle: f64 = 0.0;
-    let radius = 85.0;
-    let inner_radius = 55.0;
+    let radius = 90.0;
+    let inner_radius = 60.0;
 
     for (i, (name, (size, color))) in sorted_langs.iter().enumerate() {
         let slice_angle = (*size as f64 / total as f64) * 2.0 * PI;
@@ -137,15 +140,14 @@ fn draw_donut_chart(lang_stats: HashMap<String, (i32, String)>) -> Group {
         let d = format!("M {} {} A {} {} 0 {} 1 {} {} L {} {} A {} {} 0 {} 0 {} {} Z", x1, y1, radius, radius, large_arc, x2, y2, x3, y3, inner_radius, inner_radius, large_arc, x4, y4);
         g = g.add(Path::new().set("d", d).set("fill", color.as_str()));
         
-        // --- MULTI-COLUMN LEGEND LOGIC ---
-        // Every 10 languages, we start a new column
-        let col = i / 10;
-        let row = i % 10;
-        let x_offset = 110 + (col * 130);
-        let y_offset = (row as i32 * 22) - 100;
+        // Dynamic multi-column legend
+        let col = i / 8;
+        let row = i % 8;
+        let x_off = 120 + (col * 140);
+        let y_off = (row as i32 * 22) - 80;
 
-        g = g.add(Polygon::new().set("points", "0,0 12,0 12,12 0,12").set("fill", color.as_str()).set("transform", format!("translate({}, {})", x_offset, y_offset)));
-        g = g.add(SvgText::new().set("x", x_offset + 18).set("y", y_offset + 10).set("fill", "#586069").set("font-size", 13).add(TextNode::new(name)));
+        g = g.add(Polygon::new().set("points", "0,0 12,0 12,12 0,12").set("fill", color.as_str()).set("transform", format!("translate({}, {})", x_off, y_off)));
+        g = g.add(SvgText::new().set("x", x_off + 18).set("y", y_off + 10).set("fill", "#586069").set("font-size", 14).add(TextNode::new(name)));
         
         current_angle += slice_angle;
     }
@@ -153,9 +155,10 @@ fn draw_donut_chart(lang_stats: HashMap<String, (i32, String)>) -> Group {
 }
 
 fn draw_radar_chart(stats: &[i32; 5]) -> Group {
+    // Pushed far right and slightly up
+    let mut g = Group::new().set("transform", "translate(1150, 250)"); 
     let labels = ["Commit", "Issue", "PullReq", "Review", "Repo"];
-    let mut g = Group::new().set("transform", "translate(950, 250)"); // Pushed right
-    let max_r = 100.0;
+    let max_r = 110.0;
     
     for r in [0.25, 0.5, 0.75, 1.0] {
         let mut points = String::new();
@@ -163,7 +166,7 @@ fn draw_radar_chart(stats: &[i32; 5]) -> Group {
             let a = (i as f64 * 72.0 - 90.0).to_radians();
             points.push_str(&format!("{},{} ", a.cos() * max_r * r, a.sin() * max_r * r));
         }
-        g = g.add(Polygon::new().set("points", points).set("fill", "none").set("stroke", "#e1e4e8").set("stroke-width", 1));
+        g = g.add(Polygon::new().set("points", points).set("fill", "none").set("stroke", "#e1e4e8"));
     }
 
     let mut data_points = String::new();
@@ -172,7 +175,7 @@ fn draw_radar_chart(stats: &[i32; 5]) -> Group {
         let a = (i as f64 * 72.0 - 90.0).to_radians();
         let r = val_scaled.min(1.0) * max_r;
         data_points.push_str(&format!("{},{} ", a.cos() * r, a.sin() * r));
-        g = g.add(SvgText::new().set("x", a.cos() * 125.0 - 20.0).set("y", a.sin() * 125.0).set("fill", "#586069").set("font-size", 14).add(TextNode::new(labels[i])));
+        g = g.add(SvgText::new().set("x", a.cos() * 140.0 - 25.0).set("y", a.sin() * 140.0).set("fill", "#586069").set("font-size", 15).add(TextNode::new(labels[i])));
     }
     g.add(Polygon::new().set("points", data_points).set("fill", "rgba(46, 160, 67, 0.2)").set("stroke", "#2ea043").set("stroke-width", 2))
 }
@@ -202,17 +205,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut doc = Document::new().set("viewBox", (0, 0, VIEW_WIDTH, VIEW_HEIGHT)).set("style", "background:#ffffff; font-family: -apple-system, sans-serif;");
+    let mut doc = Document::new().set("viewBox", (0, 0, VIEW_WIDTH, VIEW_HEIGHT)).set("style", "background:#ffffff; font-family: sans-serif;");
     
     doc = doc.add(draw_3d_heatmap(&user.contributions_collection.contribution_calendar.weeks));
     doc = doc.add(draw_donut_chart(langs));
     doc = doc.add(draw_radar_chart(&[user.contributions_collection.total_commit_contributions, user.contributions_collection.total_issue_contributions, user.contributions_collection.total_pull_request_contributions, user.contributions_collection.total_pull_request_review_contributions, user.contributions_collection.total_repository_contributions]));
 
-    // Footer
+    // Footer - Placed at safe bottom
     let footer_text = format!("{} contributions    ⭐ {}     {}", user.contributions_collection.contribution_calendar.total_contributions, total_stars, total_forks);
-    doc = doc.add(SvgText::new().set("x", VIEW_WIDTH / 2.0).set("y", VIEW_HEIGHT - 30.0).set("fill", "#586069").set("text-anchor", "middle").set("font-size", 22).set("font-weight", "bold").add(TextNode::new(footer_text)));
+    doc = doc.add(SvgText::new().set("x", VIEW_WIDTH / 2.0).set("y", VIEW_HEIGHT - 40.0).set("fill", "#586069").set("text-anchor", "middle").set("font-size", 24).set("font-weight", "bold").add(TextNode::new(footer_text)));
 
-    svg::save("github_extended_profile.svg", &doc)?;
-    println!("Generated: github_extended_profile.svg");
+    svg::save("github_extended_no_overlap.svg", &doc)?;
+    println!("Generated: github_extended_no_overlap.svg");
     Ok(())
 }
